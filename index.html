@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#2563eb">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Notas 2 ESO">
+  <link rel="manifest" href="./manifest.json">
+  <link rel="apple-touch-icon" href="./icon-192.png">
+  <title>Notas 2 ESO</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    :root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#172033;background:#f5f7fb}
+    *{box-sizing:border-box} body{margin:0}.wrap{max-width:760px;margin:auto;padding:18px 16px 100px}
+    header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:10px 0 18px}
+    h1{font-size:26px;margin:0}.muted{color:#667085}.card{background:#fff;border:1px solid #e5e7eb;border-radius:18px;padding:16px;margin:12px 0;box-shadow:0 3px 12px #0000000a}
+    input,select,textarea,button{width:100%;font:inherit;border-radius:12px;padding:12px;border:1px solid #d0d5dd;background:#fff}
+    button{border:0;background:#2563eb;color:white;font-weight:700;cursor:pointer}.secondary{background:#eef2ff;color:#1d4ed8}.danger{background:#fff1f2;color:#be123c}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.row{display:flex;gap:8px;align-items:center}.row>*{flex:1}
+    label{font-size:13px;font-weight:650;display:block;margin:10px 0 5px}.hidden{display:none!important}
+    .score{font-size:34px;font-weight:800}.subject{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:12px 0;border-bottom:1px solid #eee}.subject:last-child{border:0}
+    .pill{padding:5px 9px;border-radius:999px;background:#eef2ff;color:#1d4ed8;font-weight:700;white-space:nowrap}
+    .note{padding:13px 0;border-bottom:1px solid #eee}.note:last-child{border:0}.note-head{display:flex;justify-content:space-between;gap:12px}.note-actions{display:flex;gap:8px;margin-top:9px}.note-actions button{padding:8px}
+    .tabs{position:fixed;bottom:0;left:0;right:0;background:#ffffffee;backdrop-filter:blur(12px);border-top:1px solid #ddd;display:flex;justify-content:center;padding:8px max(8px,env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left))}
+    .tabs div{width:min(760px,100%);display:flex;gap:6px}.tabs button{background:transparent;color:#475467;font-size:13px;padding:10px 5px}.tabs button.active{background:#eef2ff;color:#1d4ed8}
+    #msg{padding:10px;border-radius:10px;margin:8px 0;background:#f2f4f7}.topBtn{width:auto;padding:9px 12px}
+    @media(max-width:520px){.grid{grid-template-columns:1fr}.score{font-size:30px}}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <section id="auth">
+    <header><div><h1>📚 Notas 2.º ESO</h1><div class="muted">Control familiar de calificaciones</div></div></header>
+    <div class="card">
+      <h2>Iniciar sesión</h2>
+      <div id="authMsg" class="muted"></div>
+      <label>Correo</label><input id="email" type="email" autocomplete="email">
+      <label>Contraseña</label><input id="password" type="password" autocomplete="current-password">
+      <button style="margin-top:14px" onclick="login()">Entrar</button>
+    </div>
+  </section>
+
+  <section id="app" class="hidden">
+    <header>
+      <div><h1>📚 Notas 2.º ESO</h1><div id="userEmail" class="muted"></div></div>
+      <button class="secondary topBtn" onclick="logout()">Salir</button>
+    </header>
+    <div id="msg" class="hidden"></div>
+
+    <main id="inicio">
+      <div class="card"><div class="muted">Media general</div><div id="mediaGeneral" class="score">—</div><div id="numNotas" class="muted">0 notas</div></div>
+      <div class="card"><h2>Asignaturas</h2><div id="resumenAsignaturas"></div></div>
+    </main>
+
+    <main id="notas" class="hidden">
+      <div class="card">
+        <h2 id="formTitle">Añadir nota</h2>
+        <input id="editId" type="hidden">
+        <label>Asignatura</label><select id="asignatura"></select>
+        <label>Descripción</label><input id="titulo" placeholder="Ej. Examen Tema 1">
+        <div class="grid">
+          <div><label>Nota (0–10)</label><input id="nota" type="number" min="0" max="10" step="0.01"></div>
+          <div><label>Fecha</label><input id="fecha" type="date"></div>
+          <div><label>Evaluación</label><select id="evaluacion"><option>1ª Evaluación</option><option>2ª Evaluación</option><option>3ª Evaluación</option><option>Final</option></select></div>
+          <div><label>Tipo</label><select id="tipo"><option>Examen</option><option>Trabajo</option><option>Actividad</option><option>Proyecto</option><option>Otro</option></select></div>
+        </div>
+        <label>Observaciones</label><textarea id="observaciones" rows="2"></textarea>
+        <div class="row" style="margin-top:12px"><button onclick="guardarNota()">Guardar</button><button class="secondary" onclick="limpiarFormulario()">Cancelar</button></div>
+      </div>
+      <div class="card">
+        <div class="row"><h2 style="margin-right:auto">Notas</h2><select id="filtroEval" onchange="renderNotas()"><option value="">Todas</option><option>1ª Evaluación</option><option>2ª Evaluación</option><option>3ª Evaluación</option><option>Final</option></select></div>
+        <div id="listaNotas"></div>
+      </div>
+    </main>
+
+    <main id="ajustes" class="hidden">
+      <div class="card">
+        <h2>Asignaturas</h2>
+        <div class="row"><input id="nuevaAsignatura" placeholder="Nueva asignatura"><button class="topBtn" onclick="crearAsignatura()">Añadir</button></div>
+        <div id="listaAsignaturas"></div>
+      </div>
+      <div class="card"><strong>Curso</strong><div class="muted">2.º ESO</div></div>
+    </main>
+  </section>
+</div>
+
+<nav id="tabs" class="tabs hidden"><div>
+  <button id="tabInicio" class="active" onclick="showPage('inicio')">🏠<br>Inicio</button>
+  <button id="tabNotas" onclick="showPage('notas')">📝<br>Notas</button>
+  <button id="tabAjustes" onclick="showPage('ajustes')">⚙️<br>Ajustes</button>
+</div></nav>
+
+<script>
+const SUPABASE_URL = "https://ejbyiznwzocqcykekdfa.supabase.co";
+const SUPABASE_KEY = "sb_publishable_eNKHy0iI9LFLlNxgi2mN5g__ckCFJc7";
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+let currentUser=null, asignaturas=[], notas=[];
+
+function esc(v=''){return String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function mensaje(t){const e=document.getElementById('msg');e.textContent=t;e.classList.remove('hidden');setTimeout(()=>e.classList.add('hidden'),3000)}
+async function login(){
+ const email=document.getElementById('email').value.trim(), password=document.getElementById('password').value;
+ const {error}=await sb.auth.signInWithPassword({email,password});
+ document.getElementById('authMsg').textContent=error?error.message:'';
+}
+async function logout(){await sb.auth.signOut()}
+async function setSession(session){
+ currentUser=session?.user||null;
+ document.getElementById('auth').classList.toggle('hidden',!!currentUser);
+ document.getElementById('app').classList.toggle('hidden',!currentUser);
+ document.getElementById('tabs').classList.toggle('hidden',!currentUser);
+ if(currentUser){document.getElementById('userEmail').textContent=currentUser.email;await cargarDatos()}
+}
+async function cargarDatos(){
+ let a=await sb.from('asignaturas').select('*').eq('activa',true).order('nombre');
+ let n=await sb.from('notas').select('*').order('fecha',{ascending:false});
+ if(a.error||n.error){mensaje((a.error||n.error).message);return}
+ asignaturas=a.data||[]; notas=n.data||[]; renderTodo();
+}
+function renderTodo(){renderSelect();renderResumen();renderNotas();renderAsignaturas()}
+function renderSelect(){
+ document.getElementById('asignatura').innerHTML=asignaturas.map(a=>`<option value="${a.id}">${esc(a.nombre)}</option>`).join('');
+}
+function media(arr){return arr.length?arr.reduce((s,n)=>s+Number(n.nota),0)/arr.length:null}
+function renderResumen(){
+ const m=media(notas); document.getElementById('mediaGeneral').textContent=m===null?'—':m.toFixed(2);
+ document.getElementById('numNotas').textContent=`${notas.length} ${notas.length===1?'nota':'notas'}`;
+ document.getElementById('resumenAsignaturas').innerHTML=asignaturas.map(a=>{
+  const ns=notas.filter(n=>Number(n.asignatura_id)===Number(a.id)), mm=media(ns);
+  return `<div class="subject"><div><strong>${esc(a.nombre)}</strong><div class="muted">${ns.length} notas</div></div><span class="pill">${mm===null?'—':mm.toFixed(2)}</span></div>`
+ }).join('')||'<div class="muted">No hay asignaturas.</div>';
+}
+function renderNotas(){
+ const f=document.getElementById('filtroEval').value;
+ const arr=f?notas.filter(n=>n.evaluacion===f):notas;
+ document.getElementById('listaNotas').innerHTML=arr.map(n=>{
+  const a=asignaturas.find(x=>Number(x.id)===Number(n.asignatura_id));
+  return `<div class="note"><div class="note-head"><div><strong>${esc(n.titulo)}</strong><div class="muted">${esc(a?.nombre||'Asignatura')} · ${esc(n.evaluacion)} · ${esc(n.fecha||'')}</div></div><span class="pill">${Number(n.nota).toFixed(2)}</span></div>
+  ${n.observaciones?`<div class="muted">${esc(n.observaciones)}</div>`:''}
+  <div class="note-actions"><button class="secondary" onclick="editarNota(${n.id})">Editar</button><button class="danger" onclick="eliminarNota(${n.id})">Eliminar</button></div></div>`
+ }).join('')||'<div class="muted">Todavía no hay notas.</div>';
+}
+function renderAsignaturas(){
+ document.getElementById('listaAsignaturas').innerHTML=asignaturas.map(a=>`<div class="subject"><span>${esc(a.nombre)}</span><button class="danger topBtn" onclick="eliminarAsignatura(${a.id})">Eliminar</button></div>`).join('');
+}
+async function guardarNota(){
+ if(!currentUser)return;
+ const id=document.getElementById('editId').value;
+ const payload={user_id:currentUser.id,asignatura_id:Number(document.getElementById('asignatura').value),titulo:document.getElementById('titulo').value.trim(),nota:Number(document.getElementById('nota').value),fecha:document.getElementById('fecha').value,evaluacion:document.getElementById('evaluacion').value,tipo:document.getElementById('tipo').value,observaciones:document.getElementById('observaciones').value.trim()};
+ if(!payload.titulo||!Number.isFinite(payload.nota)||payload.nota<0||payload.nota>10){mensaje('Revisa el título y la nota (0–10).');return}
+ const r=id?await sb.from('notas').update(payload).eq('id',id):await sb.from('notas').insert(payload);
+ if(r.error){mensaje(r.error.message);return} limpiarFormulario();await cargarDatos();mensaje(id?'Nota modificada.':'Nota guardada.');
+}
+function editarNota(id){
+ const n=notas.find(x=>Number(x.id)===Number(id));if(!n)return;
+ document.getElementById('editId').value=n.id;document.getElementById('asignatura').value=n.asignatura_id;document.getElementById('titulo').value=n.titulo;document.getElementById('nota').value=n.nota;document.getElementById('fecha').value=n.fecha||'';document.getElementById('evaluacion').value=n.evaluacion;document.getElementById('tipo').value=n.tipo||'Examen';document.getElementById('observaciones').value=n.observaciones||'';document.getElementById('formTitle').textContent='Editar nota';window.scrollTo({top:0,behavior:'smooth'});
+}
+function limpiarFormulario(){document.getElementById('editId').value='';document.getElementById('titulo').value='';document.getElementById('nota').value='';document.getElementById('observaciones').value='';document.getElementById('fecha').value=new Date().toISOString().slice(0,10);document.getElementById('formTitle').textContent='Añadir nota'}
+async function eliminarNota(id){if(!confirm('¿Eliminar esta nota?'))return;const r=await sb.from('notas').delete().eq('id',id);if(r.error)mensaje(r.error.message);else{await cargarDatos();mensaje('Nota eliminada.')}}
+async function crearAsignatura(){
+ const nombre=document.getElementById('nuevaAsignatura').value.trim();if(!nombre)return;
+ const r=await sb.from('asignaturas').insert({nombre,curso:'2 ESO',activa:true,user_id:currentUser.id});if(r.error)mensaje(r.error.message);else{document.getElementById('nuevaAsignatura').value='';await cargarDatos()}
+}
+async function eliminarAsignatura(id){if(!confirm('Al eliminar la asignatura también se eliminarán sus notas. ¿Continuar?'))return;const r=await sb.from('asignaturas').delete().eq('id',id);if(r.error)mensaje(r.error.message);else await cargarDatos()}
+function showPage(p){
+ ['inicio','notas','ajustes'].forEach(x=>document.getElementById(x).classList.toggle('hidden',x!==p));
+ ['Inicio','Notas','Ajustes'].forEach(x=>document.getElementById('tab'+x).classList.toggle('active',x.toLowerCase()===p));
+ window.scrollTo(0,0);
+}
+(async()=>{document.getElementById('fecha').value=new Date().toISOString().slice(0,10);const {data}=await sb.auth.getSession();await setSession(data.session);sb.auth.onAuthStateChange((_e,s)=>setTimeout(()=>setSession(s),0));if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').catch(()=>{})})();
+</script>
+</body>
+</html>
