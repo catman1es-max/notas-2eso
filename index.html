@@ -28,7 +28,7 @@
     .tabs div{width:min(760px,100%);display:flex;gap:6px}.tabs button{background:transparent;color:#475467;font-size:13px;padding:10px 5px}.tabs button.active{background:#eef2ff;color:#1d4ed8}
     #msg{padding:10px;border-radius:10px;margin:8px 0;background:#f2f4f7}.topBtn{width:auto;padding:9px 12px}
     .kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.kpi{background:#fff;border:1px solid #e5e7eb;border-radius:16px;padding:13px}.kpi b{font-size:24px;display:block}
-    .chartBox{height:260px}.badge-ok{background:#ecfdf3;color:#027a48}.badge-warn{background:#fff7ed;color:#c2410c}.badge-bad{background:#fff1f2;color:#be123c}
+    .chartBox{height:260px}.badge-ok{background:#ecfdf3;color:#027a48}.badge-warn{background:#fff7ed;color:#c2410c}.badge-bad{background:#fff1f2;color:#be123c}.traffic{display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:7px}.t-ok{background:#16a34a}.t-warn{background:#f59e0b}.t-bad{background:#dc2626}
     @media(max-width:520px){.grid{grid-template-columns:1fr}.score{font-size:30px}.kpis{grid-template-columns:1fr 1fr}.chartBox{height:230px}}
   </style>
 </head>
@@ -82,9 +82,10 @@
 
     <main id="estadisticas" class="hidden">
       <div class="kpis">
-        <div class="kpi"><span class="muted">Media</span><b id="statMedia">—</b></div>
-        <div class="kpi"><span class="muted">Aprobadas</span><b id="statAprobadas">0</b></div>
-        <div class="kpi"><span class="muted">Notas</span><b id="statNotas">0</b></div>
+        <div class="kpi"><span class="muted">Media general</span><b id="statMedia">—</b></div>
+        <div class="kpi"><span class="muted">Asignaturas aprobadas</span><b id="statAprobadas">0</b></div>
+        <div class="kpi"><span class="muted">Asignaturas suspensas</span><b id="statSuspensas">0</b></div>
+        <div class="kpi"><span class="muted">Notas registradas</span><b id="statNotas">0</b></div>
       </div>
       <div class="card">
         <div class="row"><h2 style="margin-right:auto">Por evaluación</h2>
@@ -94,6 +95,8 @@
       </div>
       <div class="card"><h2>Evolución</h2><div class="chartBox"><canvas id="chartEvolucion"></canvas></div></div>
       <div class="card"><h2>Resumen por asignatura</h2><div id="statAsignaturas"></div></div>
+      <div class="card"><h2>⚠️ Necesita mejorar</h2><div id="necesitaMejorar" class="muted">Sin asignaturas suspensas.</div></div>
+      <div class="card"><h2>Comparativa de evaluaciones</h2><div class="chartBox"><canvas id="chartEvaluaciones"></canvas></div></div>
     </main>
 
     <main id="ajustes" class="hidden">
@@ -187,25 +190,66 @@ async function crearAsignatura(){
 }
 async function eliminarAsignatura(id){if(!confirm('Al eliminar la asignatura también se eliminarán sus notas. ¿Continuar?'))return;const r=await sb.from('asignaturas').delete().eq('id',id);if(r.error)mensaje(r.error.message);else await cargarDatos()}
 
-let chartA=null, chartE=null;
+let chartA=null, chartE=null, chartEv=null;
 function renderEstadisticas(){
  const sel=document.getElementById('statEval'); if(!sel)return;
  const f=sel.value, arr=f?notas.filter(n=>n.evaluacion===f):notas;
  const m=media(arr);
  document.getElementById('statMedia').textContent=m===null?'—':m.toFixed(2);
  document.getElementById('statNotas').textContent=arr.length;
- document.getElementById('statAprobadas').textContent=arr.filter(n=>Number(n.nota)>=5).length;
- const labels=[], vals=[];
- asignaturas.forEach(a=>{const ns=arr.filter(n=>Number(n.asignatura_id)===Number(a.id)); if(ns.length){labels.push(a.nombre);vals.push(Number(media(ns).toFixed(2)))}})
+
+ const subjectStats=[];
+ asignaturas.forEach(a=>{
+   const ns=arr.filter(n=>Number(n.asignatura_id)===Number(a.id));
+   if(ns.length) subjectStats.push({a,ns,m:media(ns)});
+ });
+ const aprobadas=subjectStats.filter(x=>x.m>=5).length;
+ const suspensas=subjectStats.filter(x=>x.m<5).length;
+ document.getElementById('statAprobadas').textContent=aprobadas;
+ document.getElementById('statSuspensas').textContent=suspensas;
+
+ const labels=subjectStats.map(x=>x.a.nombre);
+ const vals=subjectStats.map(x=>Number(x.m.toFixed(2)));
+
  const box=document.getElementById('statAsignaturas');
- box.innerHTML=asignaturas.map(a=>{const ns=arr.filter(n=>Number(n.asignatura_id)===Number(a.id));const mm=media(ns);if(mm===null)return '';const cls=mm>=7?'badge-ok':mm>=5?'badge-warn':'badge-bad';return `<div class="subject"><div><strong>${esc(a.nombre)}</strong><div class="muted">${ns.length} notas</div></div><span class="pill ${cls}">${mm.toFixed(2)}</span></div>`}).join('')||'<div class="muted">Sin datos.</div>';
+ box.innerHTML=subjectStats.map(x=>{
+   const cls=x.m>=7?'badge-ok':x.m>=5?'badge-warn':'badge-bad';
+   const dot=x.m>=7?'t-ok':x.m>=5?'t-warn':'t-bad';
+   return `<div class="subject"><div><strong><span class="traffic ${dot}"></span>${esc(x.a.nombre)}</strong><div class="muted">${x.ns.length} notas</div></div><span class="pill ${cls}">${x.m.toFixed(2)}</span></div>`;
+ }).join('')||'<div class="muted">Sin datos.</div>';
+
+ const low=subjectStats.filter(x=>x.m<5).sort((a,b)=>a.m-b.m);
+ document.getElementById('necesitaMejorar').innerHTML=low.length
+   ? low.map(x=>`<div class="subject"><div><strong><span class="traffic t-bad"></span>${esc(x.a.nombre)}</strong><div class="muted">Media por debajo de 5</div></div><span class="pill badge-bad">${x.m.toFixed(2)}</span></div>`).join('')
+   : '<span class="badge-ok pill">✓ Sin asignaturas suspensas</span>';
+
  if(chartA)chartA.destroy();
- chartA=new Chart(document.getElementById('chartAsignaturas'),{type:'bar',data:{labels,datasets:[{label:'Media',data:vals}]},options:{responsive:true,maintainAspectRatio:false,scales:{y:{beginAtZero:true,max:10}}}});
+ chartA=new Chart(document.getElementById('chartAsignaturas'),{
+   type:'bar',
+   data:{labels,datasets:[{label:'Media',data:vals}]},
+   options:{responsive:true,maintainAspectRatio:false,scales:{y:{beginAtZero:true,max:10}}}
+ });
+
  const ordered=[...arr].filter(n=>n.fecha).sort((a,b)=>a.fecha.localeCompare(b.fecha));
  if(chartE)chartE.destroy();
- chartE=new Chart(document.getElementById('chartEvolucion'),{type:'line',data:{labels:ordered.map(n=>n.fecha),datasets:[{label:'Nota',data:ordered.map(n=>Number(n.nota)),tension:.25}]},options:{responsive:true,maintainAspectRatio:false,scales:{y:{beginAtZero:true,max:10}}}});
-}
+ chartE=new Chart(document.getElementById('chartEvolucion'),{
+   type:'line',
+   data:{labels:ordered.map(n=>n.fecha),datasets:[{label:'Nota',data:ordered.map(n=>Number(n.nota)),tension:.25}]},
+   options:{responsive:true,maintainAspectRatio:false,scales:{y:{beginAtZero:true,max:10}}}
+ });
 
+ const evs=['1ª Evaluación','2ª Evaluación','3ª Evaluación','Final'];
+ const evVals=evs.map(ev=>{
+   const ns=notas.filter(n=>n.evaluacion===ev);
+   const mm=media(ns); return mm===null?null:Number(mm.toFixed(2));
+ });
+ if(chartEv)chartEv.destroy();
+ chartEv=new Chart(document.getElementById('chartEvaluaciones'),{
+   type:'bar',
+   data:{labels:evs,datasets:[{label:'Media',data:evVals}]},
+   options:{responsive:true,maintainAspectRatio:false,scales:{y:{beginAtZero:true,max:10}}}
+ });
+}
 function showPage(p){
  ['inicio','notas','estadisticas','ajustes'].forEach(x=>document.getElementById(x).classList.toggle('hidden',x!==p));
  ['Inicio','Notas','Estadisticas','Ajustes'].forEach(x=>document.getElementById('tab'+x).classList.toggle('active',x.toLowerCase()===p));
