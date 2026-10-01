@@ -11,6 +11,7 @@
   <link rel="apple-touch-icon" href="./icon-192.png">
   <title>Notas 2 ESO</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
   <style>
     :root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#172033;background:#f5f7fb}
     *{box-sizing:border-box} body{margin:0}.wrap{max-width:760px;margin:auto;padding:18px 16px 100px}
@@ -26,7 +27,9 @@
     .tabs{position:fixed;bottom:0;left:0;right:0;background:#ffffffee;backdrop-filter:blur(12px);border-top:1px solid #ddd;display:flex;justify-content:center;padding:8px max(8px,env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left))}
     .tabs div{width:min(760px,100%);display:flex;gap:6px}.tabs button{background:transparent;color:#475467;font-size:13px;padding:10px 5px}.tabs button.active{background:#eef2ff;color:#1d4ed8}
     #msg{padding:10px;border-radius:10px;margin:8px 0;background:#f2f4f7}.topBtn{width:auto;padding:9px 12px}
-    @media(max-width:520px){.grid{grid-template-columns:1fr}.score{font-size:30px}}
+    .kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.kpi{background:#fff;border:1px solid #e5e7eb;border-radius:16px;padding:13px}.kpi b{font-size:24px;display:block}
+    .chartBox{height:260px}.badge-ok{background:#ecfdf3;color:#027a48}.badge-warn{background:#fff7ed;color:#c2410c}.badge-bad{background:#fff1f2;color:#be123c}
+    @media(max-width:520px){.grid{grid-template-columns:1fr}.score{font-size:30px}.kpis{grid-template-columns:1fr 1fr}.chartBox{height:230px}}
   </style>
 </head>
 <body>
@@ -65,6 +68,7 @@
           <div><label>Fecha</label><input id="fecha" type="date"></div>
           <div><label>Evaluación</label><select id="evaluacion"><option>1ª Evaluación</option><option>2ª Evaluación</option><option>3ª Evaluación</option><option>Final</option></select></div>
           <div><label>Tipo</label><select id="tipo"><option>Examen</option><option>Trabajo</option><option>Actividad</option><option>Proyecto</option><option>Otro</option></select></div>
+          <div><label>Peso (%)</label><input id="peso" type="number" min="1" max="100" step="1" value="100"></div>
         </div>
         <label>Observaciones</label><textarea id="observaciones" rows="2"></textarea>
         <div class="row" style="margin-top:12px"><button onclick="guardarNota()">Guardar</button><button class="secondary" onclick="limpiarFormulario()">Cancelar</button></div>
@@ -73,6 +77,23 @@
         <div class="row"><h2 style="margin-right:auto">Notas</h2><select id="filtroEval" onchange="renderNotas()"><option value="">Todas</option><option>1ª Evaluación</option><option>2ª Evaluación</option><option>3ª Evaluación</option><option>Final</option></select></div>
         <div id="listaNotas"></div>
       </div>
+    </main>
+
+
+    <main id="estadisticas" class="hidden">
+      <div class="kpis">
+        <div class="kpi"><span class="muted">Media</span><b id="statMedia">—</b></div>
+        <div class="kpi"><span class="muted">Aprobadas</span><b id="statAprobadas">0</b></div>
+        <div class="kpi"><span class="muted">Notas</span><b id="statNotas">0</b></div>
+      </div>
+      <div class="card">
+        <div class="row"><h2 style="margin-right:auto">Por evaluación</h2>
+          <select id="statEval" onchange="renderEstadisticas()"><option value="">Todas</option><option>1ª Evaluación</option><option>2ª Evaluación</option><option>3ª Evaluación</option><option>Final</option></select>
+        </div>
+        <div class="chartBox"><canvas id="chartAsignaturas"></canvas></div>
+      </div>
+      <div class="card"><h2>Evolución</h2><div class="chartBox"><canvas id="chartEvolucion"></canvas></div></div>
+      <div class="card"><h2>Resumen por asignatura</h2><div id="statAsignaturas"></div></div>
     </main>
 
     <main id="ajustes" class="hidden">
@@ -89,6 +110,7 @@
 <nav id="tabs" class="tabs hidden"><div>
   <button id="tabInicio" class="active" onclick="showPage('inicio')">🏠<br>Inicio</button>
   <button id="tabNotas" onclick="showPage('notas')">📝<br>Notas</button>
+  <button id="tabEstadisticas" onclick="showPage('estadisticas')">📊<br>Estadísticas</button>
   <button id="tabAjustes" onclick="showPage('ajustes')">⚙️<br>Ajustes</button>
 </div></nav>
 
@@ -119,11 +141,11 @@ async function cargarDatos(){
  if(a.error||n.error){mensaje((a.error||n.error).message);return}
  asignaturas=a.data||[]; notas=n.data||[]; renderTodo();
 }
-function renderTodo(){renderSelect();renderResumen();renderNotas();renderAsignaturas()}
+function renderTodo(){renderSelect();renderResumen();renderNotas();renderAsignaturas();renderEstadisticas()}
 function renderSelect(){
  document.getElementById('asignatura').innerHTML=asignaturas.map(a=>`<option value="${a.id}">${esc(a.nombre)}</option>`).join('');
 }
-function media(arr){return arr.length?arr.reduce((s,n)=>s+Number(n.nota),0)/arr.length:null}
+function media(arr){if(!arr.length)return null;const den=arr.reduce((s,n)=>s+Number(n.peso||100),0);return den?arr.reduce((s,n)=>s+Number(n.nota)*Number(n.peso||100),0)/den:null}
 function renderResumen(){
  const m=media(notas); document.getElementById('mediaGeneral').textContent=m===null?'—':m.toFixed(2);
  document.getElementById('numNotas').textContent=`${notas.length} ${notas.length===1?'nota':'notas'}`;
@@ -137,7 +159,7 @@ function renderNotas(){
  const arr=f?notas.filter(n=>n.evaluacion===f):notas;
  document.getElementById('listaNotas').innerHTML=arr.map(n=>{
   const a=asignaturas.find(x=>Number(x.id)===Number(n.asignatura_id));
-  return `<div class="note"><div class="note-head"><div><strong>${esc(n.titulo)}</strong><div class="muted">${esc(a?.nombre||'Asignatura')} · ${esc(n.evaluacion)} · ${esc(n.fecha||'')}</div></div><span class="pill">${Number(n.nota).toFixed(2)}</span></div>
+  return `<div class="note"><div class="note-head"><div><strong>${esc(n.titulo)}</strong><div class="muted">${esc(a?.nombre||'Asignatura')} · ${esc(n.evaluacion)} · ${esc(n.fecha||'')} · Peso ${Number(n.peso||100)}%</div></div><span class="pill">${Number(n.nota).toFixed(2)}</span></div>
   ${n.observaciones?`<div class="muted">${esc(n.observaciones)}</div>`:''}
   <div class="note-actions"><button class="secondary" onclick="editarNota(${n.id})">Editar</button><button class="danger" onclick="eliminarNota(${n.id})">Eliminar</button></div></div>`
  }).join('')||'<div class="muted">Todavía no hay notas.</div>';
@@ -148,25 +170,45 @@ function renderAsignaturas(){
 async function guardarNota(){
  if(!currentUser)return;
  const id=document.getElementById('editId').value;
- const payload={user_id:currentUser.id,asignatura_id:Number(document.getElementById('asignatura').value),titulo:document.getElementById('titulo').value.trim(),nota:Number(document.getElementById('nota').value),fecha:document.getElementById('fecha').value,evaluacion:document.getElementById('evaluacion').value,tipo:document.getElementById('tipo').value,observaciones:document.getElementById('observaciones').value.trim()};
+ const payload={user_id:currentUser.id,asignatura_id:Number(document.getElementById('asignatura').value),titulo:document.getElementById('titulo').value.trim(),nota:Number(document.getElementById('nota').value),fecha:document.getElementById('fecha').value,evaluacion:document.getElementById('evaluacion').value,tipo:document.getElementById('tipo').value,peso:Number(document.getElementById('peso').value||100),observaciones:document.getElementById('observaciones').value.trim()};
  if(!payload.titulo||!Number.isFinite(payload.nota)||payload.nota<0||payload.nota>10){mensaje('Revisa el título y la nota (0–10).');return}
  const r=id?await sb.from('notas').update(payload).eq('id',id):await sb.from('notas').insert(payload);
  if(r.error){mensaje(r.error.message);return} limpiarFormulario();await cargarDatos();mensaje(id?'Nota modificada.':'Nota guardada.');
 }
 function editarNota(id){
  const n=notas.find(x=>Number(x.id)===Number(id));if(!n)return;
- document.getElementById('editId').value=n.id;document.getElementById('asignatura').value=n.asignatura_id;document.getElementById('titulo').value=n.titulo;document.getElementById('nota').value=n.nota;document.getElementById('fecha').value=n.fecha||'';document.getElementById('evaluacion').value=n.evaluacion;document.getElementById('tipo').value=n.tipo||'Examen';document.getElementById('observaciones').value=n.observaciones||'';document.getElementById('formTitle').textContent='Editar nota';window.scrollTo({top:0,behavior:'smooth'});
+ document.getElementById('editId').value=n.id;document.getElementById('asignatura').value=n.asignatura_id;document.getElementById('titulo').value=n.titulo;document.getElementById('nota').value=n.nota;document.getElementById('fecha').value=n.fecha||'';document.getElementById('evaluacion').value=n.evaluacion;document.getElementById('tipo').value=n.tipo||'Examen';document.getElementById('peso').value=n.peso||100;document.getElementById('observaciones').value=n.observaciones||'';document.getElementById('formTitle').textContent='Editar nota';window.scrollTo({top:0,behavior:'smooth'});
 }
-function limpiarFormulario(){document.getElementById('editId').value='';document.getElementById('titulo').value='';document.getElementById('nota').value='';document.getElementById('observaciones').value='';document.getElementById('fecha').value=new Date().toISOString().slice(0,10);document.getElementById('formTitle').textContent='Añadir nota'}
+function limpiarFormulario(){document.getElementById('editId').value='';document.getElementById('titulo').value='';document.getElementById('nota').value='';document.getElementById('peso').value=100;document.getElementById('observaciones').value='';document.getElementById('fecha').value=new Date().toISOString().slice(0,10);document.getElementById('formTitle').textContent='Añadir nota'}
 async function eliminarNota(id){if(!confirm('¿Eliminar esta nota?'))return;const r=await sb.from('notas').delete().eq('id',id);if(r.error)mensaje(r.error.message);else{await cargarDatos();mensaje('Nota eliminada.')}}
 async function crearAsignatura(){
  const nombre=document.getElementById('nuevaAsignatura').value.trim();if(!nombre)return;
  const r=await sb.from('asignaturas').insert({nombre,curso:'2 ESO',activa:true,user_id:currentUser.id});if(r.error)mensaje(r.error.message);else{document.getElementById('nuevaAsignatura').value='';await cargarDatos()}
 }
 async function eliminarAsignatura(id){if(!confirm('Al eliminar la asignatura también se eliminarán sus notas. ¿Continuar?'))return;const r=await sb.from('asignaturas').delete().eq('id',id);if(r.error)mensaje(r.error.message);else await cargarDatos()}
+
+let chartA=null, chartE=null;
+function renderEstadisticas(){
+ const sel=document.getElementById('statEval'); if(!sel)return;
+ const f=sel.value, arr=f?notas.filter(n=>n.evaluacion===f):notas;
+ const m=media(arr);
+ document.getElementById('statMedia').textContent=m===null?'—':m.toFixed(2);
+ document.getElementById('statNotas').textContent=arr.length;
+ document.getElementById('statAprobadas').textContent=arr.filter(n=>Number(n.nota)>=5).length;
+ const labels=[], vals=[];
+ asignaturas.forEach(a=>{const ns=arr.filter(n=>Number(n.asignatura_id)===Number(a.id)); if(ns.length){labels.push(a.nombre);vals.push(Number(media(ns).toFixed(2)))}})
+ const box=document.getElementById('statAsignaturas');
+ box.innerHTML=asignaturas.map(a=>{const ns=arr.filter(n=>Number(n.asignatura_id)===Number(a.id));const mm=media(ns);if(mm===null)return '';const cls=mm>=7?'badge-ok':mm>=5?'badge-warn':'badge-bad';return `<div class="subject"><div><strong>${esc(a.nombre)}</strong><div class="muted">${ns.length} notas</div></div><span class="pill ${cls}">${mm.toFixed(2)}</span></div>`}).join('')||'<div class="muted">Sin datos.</div>';
+ if(chartA)chartA.destroy();
+ chartA=new Chart(document.getElementById('chartAsignaturas'),{type:'bar',data:{labels,datasets:[{label:'Media',data:vals}]},options:{responsive:true,maintainAspectRatio:false,scales:{y:{beginAtZero:true,max:10}}}});
+ const ordered=[...arr].filter(n=>n.fecha).sort((a,b)=>a.fecha.localeCompare(b.fecha));
+ if(chartE)chartE.destroy();
+ chartE=new Chart(document.getElementById('chartEvolucion'),{type:'line',data:{labels:ordered.map(n=>n.fecha),datasets:[{label:'Nota',data:ordered.map(n=>Number(n.nota)),tension:.25}]},options:{responsive:true,maintainAspectRatio:false,scales:{y:{beginAtZero:true,max:10}}}});
+}
+
 function showPage(p){
- ['inicio','notas','ajustes'].forEach(x=>document.getElementById(x).classList.toggle('hidden',x!==p));
- ['Inicio','Notas','Ajustes'].forEach(x=>document.getElementById('tab'+x).classList.toggle('active',x.toLowerCase()===p));
+ ['inicio','notas','estadisticas','ajustes'].forEach(x=>document.getElementById(x).classList.toggle('hidden',x!==p));
+ ['Inicio','Notas','Estadisticas','Ajustes'].forEach(x=>document.getElementById('tab'+x).classList.toggle('active',x.toLowerCase()===p));
  window.scrollTo(0,0);
 }
 (async()=>{document.getElementById('fecha').value=new Date().toISOString().slice(0,10);const {data}=await sb.auth.getSession();await setSession(data.session);sb.auth.onAuthStateChange((_e,s)=>setTimeout(()=>setSession(s),0));if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').catch(()=>{})})();
